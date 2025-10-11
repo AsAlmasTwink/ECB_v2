@@ -1,0 +1,5 @@
+LIBRARY ECB_llc
+EXPORTS
+	GetConnectedDevice			@1
+	GetDevicePID				@2
+	GetDeviceVID				@3
