@@ -16,13 +16,17 @@ namespace ECB_v2.Scanner
         public delegate IntPtr GetConnectedDevice(int maxWaitTime /*In seconds*/);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate IntPtr GetDevicePID(IntPtr device);
+        private delegate int GetDevicePID(IntPtr device);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate IntPtr GetDeviceVID(IntPtr device);
+        private delegate int GetDeviceVID(IntPtr device);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private delegate void FreeDevice(IntPtr device);
         
         private string[] WaitForConnection()
         {
+            
             IntPtr Dll = DLL_worker.LoadLibraryA("ECB_llc.dll");
             if (Dll == IntPtr.Zero)
             {
@@ -38,7 +42,7 @@ namespace ECB_v2.Scanner
                 IntPtr device = waitForConnect(60 * 2);
                 if (device == IntPtr.Zero)
                     throw new Exception("Device not found or time out!");
-                IntPtr pidPtr = GetDevPID(device),
+                int pidPtr =  GetDevPID(device),
                     vidPtr = GetDevVID(device);
                 throw new Exception("Not ended the function!");
             }

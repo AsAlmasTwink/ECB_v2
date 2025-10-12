@@ -3,3 +3,4 @@ EXPORTS
 	GetConnectedDevice			@1
 	GetDevicePID				@2
 	GetDeviceVID				@3
+	FreeDevice					@4
