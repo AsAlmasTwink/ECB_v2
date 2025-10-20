@@ -1,7 +1,8 @@
 #include "pch.h"
+#include "usb_HID.h"
 #include <Dbt.h>
-#include <string>
-#include <algorithm>
+
+
 #define WNDCLASSNAME "ECB_llc_wclass"
 #define WM_TIMEOUT	WM_USER+5
 struct DEVPARAMS {
@@ -11,8 +12,6 @@ struct DEVPARAMS {
 DEVPARAMS* result = 0;
 
 
-constexpr auto pid = "PID_";
-constexpr auto vid = "VID_";
 
 bool ExtractHexValue(const std::string& str, const std::string& prefix, USHORT* value) {
 	size_t pos = str.find(prefix);
@@ -55,13 +54,18 @@ LRESULT CALLBACK WinHandler(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	case WM_CREATE: {
 		HWND x;
 		x = CreateWindowA(WC_BUTTONA, "Отмена", WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, 10, 150, 150, 40, wnd, (HMENU)IDCANCEL, 0, 0);
-		if (!x)
+		if (!x) {
 			PostQuitMessage(0);
+			return FALSE;
+		}
 		x = CreateWindowA(WC_STATICA, "ОЖИДАНИЕ ПОДКЛЮЧЕНИЯ УСТРОЙСТВА...", WS_CHILD | SS_CENTER | WS_VISIBLE, 10, 10, 380, 40, wnd, 0, 0, 0);
-		// change font of WC_STATICA...
+		
 		x = CreateWindowA(PROGRESS_CLASSA, 0, WS_CHILD | PBS_MARQUEE | WS_VISIBLE, 10, 100, 380, 40, wnd, (HMENU)1001, 0, 0);
-		if (!x)
+		if (!x) {
 			PostQuitMessage(0);
+			return FALSE;
+		}
+		SendMessageA(x, PBM_SETMARQUEE, TRUE, 0);
 	}break;
 	case WM_INPUT_DEVICE_CHANGE: {
 		if (wParam == GIDC_ARRIVAL) {
@@ -93,7 +97,12 @@ LRESULT CALLBACK WinHandler(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					infoSize = MessageBoxA(wnd, str.c_str(), "УСТРОЙСТВО НАЙДЕНО", MB_ICONINFORMATION | MB_YESNO);
 					if (infoSize == IDYES) {
 						if (LoadPIDandVID(DevName)) {
-
+							SendMessageA(wnd, WM_CLOSE, 0, 0);
+						}
+						else {
+							infoSize = MessageBoxA(wnd, "Не удалось получить доступ к устройству! Попробуете ещё раз?", "ОШИБКА МОДУЛЯ", MB_YESNO);
+							if (infoSize == IDNO)
+								SendMessageA(wnd, WM_CLOSE, 0, 0);
 						}
 					}
 				}
@@ -111,7 +120,7 @@ LRESULT CALLBACK WinHandler(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		case IDCANCEL: {
 			if (result != 0)
 			{
-				free(result);
+				delete result;
 				result = 0;
 			}
 			SendMessageA(wnd, WM_CLOSE, 0, 0);
@@ -124,7 +133,30 @@ LRESULT CALLBACK WinHandler(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void CALLBACK TimeOut(HWND wnd, UINT o, UINT_PTR t, DWORD f) {
+	MessageBoxA(wnd, "Вышло время максимального ожидания подключения! Надеемся вы успели...", "ВНИМАНИЕ!", MB_ICONEXCLAMATION);
+	PostQuitMessage(0);
+}
 
+bool RegistrateInput(HWND wnd) {
+	RAWINPUTDEVICE rwDC[2];
+	rwDC[0].usUsagePage = 0x0001; // for keyboard
+	rwDC[0].usUsage = 0x0006;
+	rwDC[0].dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY;
+	rwDC[0].hwndTarget = wnd;
+
+	rwDC[1].usUsagePage = 0x008C; // for barcode-scanner (only for OS with "hidscanner.dll")
+	rwDC[1].usUsage = 0x0002;
+	rwDC[1].dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY;
+	rwDC[1].hwndTarget = wnd;
+
+	if (!RegisterRawInputDevices(rwDC, 2, sizeof(RAWINPUTDEVICE)))
+	{
+		int mbr = GetLastError();
+		
+		MessageBoxA(wnd, "ОШИБКА: возможно вы не обладаете необходимыми правами доступа на этом устройстве, пожалуйста обратитесь к администратору!", "ОШИБКА МОДУЛЯ", MB_ICONERROR);
+		return false;
+	}
+	return true;
 }
 
 extern "C" cdecl void* GetConnectedDevice(int waitTimeInSec) {
@@ -157,34 +189,25 @@ extern "C" cdecl void* GetConnectedDevice(int waitTimeInSec) {
 	Y = (GetSystemMetrics(SM_CYSCREEN) / 2) - 200;
 	SetWindowPos(wnd, HWND_TOPMOST, X, Y, 400, 200, SWP_NOSIZE);
 
-	RAWINPUTDEVICE rwDC[2];
-	rwDC[0].usUsagePage = 0x0001;
-	rwDC[0].usUsage = 0x0006;
-	rwDC[0].dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY;
-	rwDC[0].hwndTarget = wnd;
+	
 
-	rwDC[1].usUsagePage = 0x008C;
-	rwDC[1].usUsage = 0x0002;
-	rwDC[1].dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY;
-	rwDC[1].hwndTarget = wnd;
-
-	if (!RegisterRawInputDevices(rwDC, 2, sizeof(RAWINPUTDEVICE)))
+	if (!RegistrateInput(wnd))
 	{
-		int mbr = GetLastError();
-		MessageBoxA(wnd, "ОШИБКА: возможно вы не обладаете необходимыми правами доступа на этом устройстве, пожалуйста обратитесь к администратору!", "ОШИБКА МОДУЛЯ", MB_ICONERROR);
 		DestroyWindow(wnd);
 		return 0;
 	}
-	
-	if (SetTimer(wnd, WM_TIMEOUT, min(USER_TIMER_MAXIMUM, max(USER_TIMER_MINIMUM, waitTimeInSec)), TimeOut) == 0)
+	UINT_PTR Timer;
+	if ((Timer = SetTimer(wnd, WM_TIMEOUT, max(60 * 1000, waitTimeInSec * 1000), TimeOut)) == 0) {
+		MessageBoxA(wnd, "ОШИБКА: невозможно установить системный таймер!", "ОШИБКА МОДУЛЯ", MB_ICONERROR);
 		return 0;
+	}
 	MSG msg;
 	while (GetMessageA(&msg, 0, 0, 0)) {
 		TranslateMessage(&msg);
 		DispatchMessageA(&msg);
 	}
-	if(result != 0)
-		return result;
+	KillTimer(wnd, Timer);
+	return result;
 }
 
 extern "C" cdecl void FreeDevice(void* device) {

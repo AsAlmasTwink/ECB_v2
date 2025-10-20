@@ -4,3 +4,9 @@ EXPORTS
 	GetDevicePID				@2
 	GetDeviceVID				@3
 	FreeDevice					@4
+
+	CreateScannerObject			@5
+	RegistrateObjectsReader		@6
+	StartupScannersReader		@7
+	UnregistrateObjectsReader	@8
+	DeleteScannerObject			@9

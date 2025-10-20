@@ -9,7 +9,7 @@ using System.Text;
 
 namespace ECB_v2
 {
-    internal class Settings
+    internal static class Settings
     {
         public enum ST_STATUS
         {
@@ -22,18 +22,21 @@ namespace ECB_v2
           VALUE_NOT_FOUND,
           ANY_ERROR
         };
-        
-        private string stFilePath;
-        private Dictionary<string, string> currentPairs = new Dictionary<string, string>();
-        public  ST_STATUS status;
 
-        public Settings(string stFilePath) { this.stFilePath = stFilePath; }
+        private static string stFilePath;
+        private static Dictionary<string, string> currentPairs = new Dictionary<string, string>();
+        public  static ST_STATUS status;
 
-        public ST_STATUS LoadFile()
+        public static void SetSettingsFile(string stFile)
         {
-            if (!File.Exists(this.stFilePath)) return (this.status = ST_STATUS.FILE_NOT_FOUND);
+            Settings.stFilePath = stFile;
+        }
 
-            using (StreamReader sr = File.OpenText(this.stFilePath)) {
+        public static ST_STATUS LoadFile()
+        {
+            if (!File.Exists(Settings.stFilePath)) return (Settings.status = ST_STATUS.FILE_NOT_FOUND);
+
+            using (StreamReader sr = File.OpenText(Settings.stFilePath)) {
                 string str;
                 while ((str = sr.ReadLine()) != null)
                 {
@@ -51,60 +54,60 @@ namespace ECB_v2
 
                 }
             }
-            return (this.status = ST_STATUS.SUCCESS);
+            return (Settings.status = ST_STATUS.SUCCESS);
 
         }
 
-        public string GetValue(string key)
+        public static string GetValue(string key)
         {
             if(string.IsNullOrEmpty(key))
                 return null;
             string retValue;
             try
             {
-                if (this.currentPairs.ContainsKey(key))
-                    retValue = this.currentPairs[key];
+                if (Settings.currentPairs.ContainsKey(key))
+                    retValue = Settings.currentPairs[key];
                 else
                 {
                     retValue = null;
-                    this.status = ST_STATUS.KEY_NOT_FOUND;
+                    Settings.status = ST_STATUS.KEY_NOT_FOUND;
                 }
             }
             catch
             {
                 retValue = null;
-                this.status = ST_STATUS.ANY_ERROR;
+                Settings.status = ST_STATUS.ANY_ERROR;
             }
             return retValue;
         }
 
-        public ST_STATUS SetVal(string key, string value) {
+        public static ST_STATUS SetVal(string key, string value) {
             if(string.IsNullOrEmpty(key.Trim())|| string.IsNullOrEmpty(value.Trim())) return ST_STATUS.ANY_ERROR;
             key = key.Trim();
             value = value.Trim();
-            if (this.currentPairs.ContainsKey(key))
+            if (Settings.currentPairs.ContainsKey(key))
             {
-                this.currentPairs[key] = value;
+                Settings.currentPairs[key] = value;
             }
             else
             {
-                this.currentPairs.Add(key, value);
+                Settings.currentPairs.Add(key, value);
             }
-            return (this.status = ST_STATUS.SUCCESS);
+            return (Settings.status = ST_STATUS.SUCCESS);
         }
 
-        public ST_STATUS SaveSettings()
+        public static ST_STATUS SaveSettings()
         {
 
-            using (StreamWriter sw = File.CreateText(this.stFilePath)) {
-                foreach (var item in this.currentPairs)
+            using (StreamWriter sw = File.CreateText(Settings.stFilePath)) {
+                foreach (var item in Settings.currentPairs)
                 {
                     string str = item.Key + "=" + item.Value;
                     str.Trim();
                     sw.WriteLine(str);
                 }
             }
-            return (this.status = ST_STATUS.SUCCESS);
+            return (Settings.status = ST_STATUS.SUCCESS);
         }
         
     }

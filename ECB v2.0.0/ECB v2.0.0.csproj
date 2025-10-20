@@ -94,6 +94,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="dll\DLL_worker.cs" />
+    <Compile Include="Loading\CheckModulesWnd.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Loading\CheckModulesWnd.Designer.cs">
+      <DependentUpon>CheckModulesWnd.cs</DependentUpon>
+    </Compile>
     <Compile Include="resources\Resources.cs" />
     <Compile Include="Scanner\ScannerHandle.cs" />
     <Compile Include="Scanner\ScSettings.cs">
@@ -111,6 +117,9 @@
     <Compile Include="Start.Designer.cs">
       <DependentUpon>Start.cs</DependentUpon>
     </Compile>
+    <EmbeddedResource Include="Loading\CheckModulesWnd.resx">
+      <DependentUpon>CheckModulesWnd.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>

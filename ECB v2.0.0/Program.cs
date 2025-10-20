@@ -14,7 +14,8 @@ namespace ECB_v2
         public static readonly Dictionary<string, string> errors = new Dictionary<string, string> { 
             ["MDERR"] = "ОШИБКА! Критически важные модули программы не установлены или повреждены! Переустановите приложение!",
             ["MEM"] = "ОШИБКА! Оперативная память не выделена! Проверьте соответствие системы требованиям программы!",
-            ["UNKNOWN"] = "ОШИБКА! Оперативная память не выделена! Проверьте соответствие системы требованиям программы!"
+            ["UNKNOWN"] = "ОШИБКА! Оперативная память не выделена! Проверьте соответствие системы требованиям программы!",
+            ["STERR"] = "ОШИБКА! Оперативная память не выделена! Проверьте соответствие системы требованиям программы!"
         };
 
         public static readonly Dictionary<string, string> warns = new Dictionary<string, string>
@@ -31,17 +32,7 @@ namespace ECB_v2
         public static ScannerHandle hScanner;
         public static void CheckModules()
         {
-            IntPtr dll = IntPtr.Zero;
-            foreach (string i in DEFINES.CritDLLs)
-            {
-                dll = ECB_v2.dll.DLL_worker.LoadLibraryA(i);
-                if (dll == IntPtr.Zero) {
-                    MessageBox.Show(DEFINES.errors["MDERR"], "КРИТИЧЕСКАЯ ОШИБКА", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    Application.Exit();
-                    return;
-                }
-                ECB_v2.dll.DLL_worker.FreeLibrary(dll);
-            }
+            Application.Run(new Loading.CheckModulesWnd());
         }
 
         public static void WarnMsg(string text)
@@ -74,6 +65,18 @@ namespace ECB_v2
 
             CheckModules();
 
+            Settings.SetSettingsFile(DEFINES.SETTINGS_FILE);
+            switch (Settings.LoadFile())
+            {
+                case Settings.ST_STATUS.FILE_NOT_FOUND: {
+                        Settings.SetVal("CtrlNum", "0xffffffff");
+                        Settings.SaveSettings();
+
+                }break;
+                case Settings.ST_STATUS.SUCCESS:break;
+                default:
+                    Program.ErrorMsg(DEFINES.errors["STERR"]); Application.Exit(); break;
+            }
             Resources.LoadResources();
             hScanner = new ScannerHandle();
             if(hScanner == null)

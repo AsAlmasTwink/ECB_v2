@@ -6,3 +6,6 @@
 #include <CommCtrl.h>
 #include <commdlg.h>
 #include <memory>
+
+#include <string>
+#include <algorithm>
