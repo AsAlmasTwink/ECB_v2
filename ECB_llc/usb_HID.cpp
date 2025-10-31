@@ -9,6 +9,7 @@ struct DEVPARAMS {
 	USHORT pid = 0, vid = 0;
 };
 
+
 DEVPARAMS* result = 0;
 
 

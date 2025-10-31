@@ -20,6 +20,9 @@ namespace ECB_v2.Scanner
     internal class ScannerHandle
     {
         private string PID = null, VID = null;
+        private UInt64 currDevHandleID = 0;
+        private static UInt64 ErrorID = 0xffffffffffffffff;
+        private static IntPtr Dll = IntPtr.Zero;
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet =CharSet.Ansi)]
         public delegate IntPtr GetConnectedDevice(int maxWaitTime /*In seconds*/);
 
@@ -47,14 +50,18 @@ namespace ECB_v2.Scanner
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
         private delegate void DeleteScannerObject(UInt64 id);
 
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private delegate void SetScannerReadCallback(UInt64 id, IntPtr func);
+
+        public delegate void DataCallbackFunc(uint status, IntPtr data);
+
+        private IntPtr _DTC;
         /// <summary>
         ///  Function wait for connection of scanner and return it PID and VID  
         /// </summary>
         /// <returns>string[2] { PID, VID }</returns>
         private string[] WaitForConnection()
         {
-            
-            IntPtr Dll = DLL_worker.LoadLibraryA("ECB_llc.dll");
             if (Dll == IntPtr.Zero)
             {
                 Program.CheckModules();
@@ -82,11 +89,6 @@ namespace ECB_v2.Scanner
             {
                 MessageBox.Show(e.Message);
             }
-            finally
-            {
-                DLL_worker.FreeLibrary(Dll);
-            }
-            DLL_worker.FreeLibrary(Dll);
             return null;
         }
         private bool FindScanner()
@@ -111,10 +113,39 @@ namespace ECB_v2.Scanner
         {
             if (this.VID == null || this.PID == null)
                 return false;
+            try {
+                if (Dll == IntPtr.Zero)
+                {
+                    Program.CheckModules();
+                    return false;
+                }
+                CreateScannerObject CreateSc = (CreateScannerObject)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "CreateScannerObject"), typeof(CreateScannerObject));
+                this.currDevHandleID = CreateSc(this.PID, this.VID);
+                if (this.currDevHandleID == ScannerHandle.ErrorID)
+                {
+                    Program.ErrorMsg("Не удалось получить доступ к сканнеру штрих-кодов! Ошибка...");
+                    return false;
+                }
+            }
+            catch { 
+                Program.ErrorMsg(DEFINES.errors["UNKNOWN"]);
+                return false;
+            }
             return true;
         }
 
         public ScannerHandle() { }
+
+        public static bool LoadModules() {
+            Dll = DLL_worker.LoadLibraryA("ECB_llc.dll");
+            return Dll != IntPtr.Zero; 
+        }
+
+        public static void FreeModules()
+        {
+            if(Dll != IntPtr.Zero)
+                DLL_worker.FreeLibrary(Dll);
+        }
         public bool Initialize() {  
             try
             {
@@ -127,17 +158,24 @@ namespace ECB_v2.Scanner
                 {
                     return FindScanner();
                 }
-                IntPtr Dll = DLL_worker.LoadLibraryA("ECB_llc.dll");
-                if(Dll == IntPtr.Zero)
-                {
-                    Program.CheckModules();
-                    return false;
-                }
-            }catch
+            }
+            catch
             {
                 Program.ErrorMsg(DEFINES.errors["UNKNOWN"]);
+                return false;
             }
             return ScCreateConnection(); 
+        }
+
+        public void SetDataCallback(DataCallbackFunc func) {
+            if (Dll == IntPtr.Zero)
+            {
+                Program.CheckModules();
+                return;
+            }
+            SetScannerReadCallback SetRCB = (SetScannerReadCallback)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "SetScannerReadCallback"), typeof(SetScannerReadCallback));
+            this._DTC = Marshal.GetFunctionPointerForDelegate(func);
+            SetRCB(this.currDevHandleID, this._DTC);
         }
 
         public void SetScanner(string PID, string VID, int v)
@@ -153,8 +191,45 @@ namespace ECB_v2.Scanner
         }
 
         public static bool StartUpReadCycle() {
-            return false;
+            if (Dll == IntPtr.Zero)
+            {
+                Program.CheckModules();
+                return false;
+            }
+            RegistrateObjectsReader RegReader = (RegistrateObjectsReader)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "RegistrateObjectsReader"), typeof(RegistrateObjectsReader));
+            StartupScannersReader StartRead = (StartupScannersReader)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "StartupScannersReader"), typeof (StartupScannersReader));
+            
+            if(!RegReader())
+            {
+                return false;
+            }
+            if (!StartRead())
+            {
+                return false;
+            }
+            return true;
         }
-        public void Free() { }
+
+        public static void StopReadCycle()
+        {
+            if (Dll == IntPtr.Zero)
+                return;
+            UnregistrateObjectsReader UnregReader = (UnregistrateObjectsReader)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "UnregistrateObjectsReader"), typeof(UnregistrateObjectsReader));
+            UnregReader();
+        }
+
+        public void Free() {
+            this.PID = null;
+            this.VID = null;
+            if(this.currDevHandleID != ScannerHandle.ErrorID)
+            {
+                if (Dll == IntPtr.Zero)
+                {
+                    Program.CheckModules();
+                }
+                DeleteScannerObject DelObj = (DeleteScannerObject)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "DeleteScannerObject"), typeof(DeleteScannerObject));
+                DelObj(this.currDevHandleID);
+            }
+        }
     }
 }

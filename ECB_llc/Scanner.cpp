@@ -1,12 +1,26 @@
 #include "pch.h"
 #include "usb_HID.h"
+
 #include <vector>
+#include <SetupAPI.h>
+#include <hidsdi.h>
+#include <winusb.h>
 #include <exception>
 
 #define SCANCLASS "SCANllcwnd"
 #define CreateID(pid, vid) ((pid<<16) | vid)
 
+#pragma comment(lib, "SetupAPI.lib")
+#pragma comment(lib, "Hid.lib")
+
+
+struct DEVPARAMS {
+	USHORT pid = 0, vid = 0;
+};
+typedef void (*SC_OBJ_READCBF)(UINT status, char* data);
+
 LRESULT CALLBACK ScanWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+bool LoadPIDandVID(char* devName, __out DEVPARAMS* result);
 
 class ScannerObject
 {
@@ -19,28 +33,74 @@ public:
 	}
 
 	bool CheckExist() {
-		return true;
+		GUID hidGUID;
+		HidD_GetHidGuid(&hidGUID);
+		HDEVINFO hDevInfo = SetupDiGetClassDevsA(&hidGUID, 0, 0, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
+		if (hDevInfo == INVALID_HANDLE_VALUE) {
+			return false;
+		}
+
+		SP_DEVINFO_DATA DevInfoData;
+		ZeroMemory(&DevInfoData, sizeof(SP_DEVINFO_DATA));
+		DevInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+		DWORD DevI = 0;
+
+		while (SetupDiEnumDeviceInfo(hDevInfo, DevI, &DevInfoData)) {
+			DevI++;
+			DWORD sz;
+			SetupDiGetDeviceInstanceIdA(hDevInfo, &DevInfoData, 0, 0, &sz);
+			char* DevID = new char[sz];
+			ZeroMemory(DevID, sz);
+			if (!DevID) {
+				SetupDiDestroyDeviceInfoList(hDevInfo);
+				throw new std::exception("Memory error: 'ECB_llc.dll'");
+				return false;
+			}
+			if (!SetupDiGetDeviceInstanceIdA(hDevInfo, &DevInfoData, DevID, sz, &sz)) {
+				delete[] DevID;
+				continue;
+			}
+
+			DEVPARAMS* cur = new DEVPARAMS;
+			if (!cur)
+			{
+				delete[] DevID;
+				SetupDiDestroyDeviceInfoList(hDevInfo);
+				throw new std::exception("Memory error: 'ECB_llc.dll'");
+				return false;
+			}
+			if (!LoadPIDandVID(DevID, cur)) {
+				delete[] DevID;
+				delete cur;
+				continue;
+			}
+			delete[] DevID;
+			if (this->ID == CreateID(cur->pid, cur->vid)) {
+				delete cur;
+				SetupDiDestroyDeviceInfoList(hDevInfo);
+				return true;
+			}
+		}
+
+		return false;
 	}
 
-	void RegistrateReadedData(char* data) {
-		if (data == 0)
+	void AddKey(char key){
+		switch (key) {
+		case '\r':
+		case '\n':
+		case '\0':
+			this->RegistrateReadedData((char*)CurrInput.c_str());
+			CurrInput.clear();
 			return;
-		size_t dLength = lstrlenA(data);
-		if (dLength > 1024)
-			return;
-		dLength++;
-		char* buffer = new char[dLength];
-		ZeroMemory(buffer, dLength);	
-		memcpy(buffer, data, dLength--);
-		BRCQueue.push_back(buffer);
+		}
+		CurrInput += key;
 	}
 
-	char* GetReadedData() {
-		if (BRCQueue.size() == 0)
-			return 0;
-		char* buffer = BRCQueue.front();
-		BRCQueue.erase(BRCQueue.begin());
-		return buffer;
+	void SetDataCallbackFunc(SC_OBJ_READCBF rcb) {
+		if (this->ReadCallback != 0)
+			this->ReadCallback(this->RCB_CHANGE, rcb == 0 ? (char*)"HANDLE DISCONNECT" : (char*)"HANDLE CHANGE");
+		this->ReadCallback = rcb;
 	}
 
 	UINT64 GetID() {
@@ -48,18 +108,39 @@ public:
 	}
 
 	~ScannerObject() {
-		for(char*i : BRCQueue)
-			delete[] i;
-		BRCQueue.clear();
 	}
 
 private:
-	std::vector<char*> BRCQueue;
+	void RegistrateReadedData(char* data) {
+		if (data == 0 || this->ReadCallback == 0)
+			return;
+		size_t dLength = lstrlenA(data);
+		if (dLength > 1024 || dLength <= 4)
+			return;
+		dLength++;
+		char* buffer = new char[dLength];
+		if (buffer == 0)
+			return;
+		ZeroMemory(buffer, dLength);
+		memcpy(buffer, data, dLength--);
+		this->ReadCallback(this->DATA, buffer);
+		delete[] buffer;
+	}
+	enum STATUS_MSG {
+		DATA,
+		RCB_CHANGE,
+		SC_DISCONNECT,
+		SC_APP_FREE,
+		SC_CONNECT
+	};
+	std::string CurrInput;
 	std::string pid, vid;
+	char* lastBuf = 0;
+	SC_OBJ_READCBF ReadCallback = 0;
 	UINT64 ID;
 };
 
-ScannerObject* scannerObjects[256] = { 0 };
+static ScannerObject* scannerObjects[256] = { 0 };
 bool IsCanToInteractWithScanner = false;
 HWND ScanWnd = 0;
 HANDLE ScanThread = 0;
@@ -85,7 +166,8 @@ extern "C" UINT64 CreateScannerObject(char* pid, char* vid) {
 	if(!scanner->CheckExist()) {
 		delete scanner;
 		IsCanToInteractWithScanner = true;
-		return 0xffffffff;
+		MessageBoxA(0, "ÎØÈÁÊÀ: íåäîñòàòî÷íî ïðàâ èëè óñòðîéñòâî íå íàéäåíî", "ÎØÈÁÊÀ ÌÎÄÓËß", MB_ICONERROR | MB_OK);
+		return 0xffffffffffffffff;
 	}
 	size_t hash = GetHash(scanner->GetID());
 	if(scannerObjects[hash] != 0)
@@ -95,6 +177,18 @@ extern "C" UINT64 CreateScannerObject(char* pid, char* vid) {
 
 	IsCanToInteractWithScanner = true;
 	return id;
+}
+
+extern "C" void SetScannerReadCallback(UINT64 id, SC_OBJ_READCBF func) {
+	IsCanToInteractWithScanner = false;
+	size_t i = GetHash(id);
+	if (scannerObjects[i] == 0)
+	{
+		IsCanToInteractWithScanner = true;
+		return;
+	}
+	scannerObjects[i]->SetDataCallbackFunc(func);
+	IsCanToInteractWithScanner = true;
 }
 
 extern "C" bool RegistrateObjectsReader() {
@@ -110,6 +204,12 @@ extern "C" bool RegistrateObjectsReader() {
 	ScanWnd = CreateWindowA(SCANCLASS, SCANCLASS, 0, 0, 0, 0, 0, HWND_MESSAGE, 0, GetModuleHandleA(0), 0);
 	if(ScanWnd == 0)
 		return false;
+	if (!RegistrateInput(ScanWnd))
+	{
+		DestroyWindow(ScanWnd);
+		ScanWnd = 0;
+		return false;
+	}
 	return true;
 }
 
@@ -129,7 +229,7 @@ extern "C" void UnregistrateObjectsReader() {
 	IsCanToInteractWithScanner = false;
 	DestroyWindow(ScanWnd);
 	ScanWnd = 0;
-	WaitForSingleObject(ScanThread, INFINITE);
+	WaitForSingleObject(ScanThread, 2000);
 	CloseHandle(ScanThread);
 	ScanThread = 0;
 }
@@ -143,10 +243,6 @@ extern "C" void DeleteScannerObject(UINT64 id) {
 	}
 	IsCanToInteractWithScanner = true;
 }
-
-struct DEVPARAMS {
-	USHORT pid = 0, vid = 0;
-};
 
 
 bool LoadPIDandVID(char* devName, __out DEVPARAMS* result) {
@@ -169,6 +265,8 @@ LRESULT ScanWndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	{
 	case WM_INPUT:
 	{
+		if (!IsCanToInteractWithScanner)
+			break;
 		HRAWINPUT hRawInput = (HRAWINPUT)lParam;
 		UINT dataSize = 0;
 
@@ -190,6 +288,15 @@ LRESULT ScanWndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					DEVPARAMS params = { 0 };
 					if (LoadPIDandVID(name, &params)) {
 						UINT64 devID = CreateID(params.pid, params.vid);
+						size_t i = GetHash(devID);
+						if (scannerObjects[i] != 0) {
+							RAWKEYBOARD& kbd = raw->data.keyboard;
+
+							if (kbd.Message == WM_KEYDOWN || kbd.Message == WM_SYSKEYDOWN) {
+								scannerObjects[i]->AddKey(kbd.VKey);
+								return FALSE;
+							}
+						}
 					}
 				}
 			}
