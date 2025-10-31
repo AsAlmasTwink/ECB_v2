@@ -45,9 +45,9 @@ namespace ECB_v2.Scanner
                 case 3: {
                         this.ActDesc.Text = "Ожидается подключение... Идёт поиск...";
                         Resources.LoadResourceIMG(this.ActImage, "search.png");
-                        this.Enabled = false;
+                        this.Hide();
                         this.result = waitFunc();
-                        this.Enabled = true;
+                        this.Show();
                         NextAct(sender, e);
                     }
                     break;

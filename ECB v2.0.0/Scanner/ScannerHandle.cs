@@ -8,26 +8,60 @@ using System.Windows.Forms;
 
 namespace ECB_v2.Scanner
 {
+    public class ScannerError : Exception
+    {
+        public ScannerError() { }
+
+        public ScannerError(string message) : base(message) { }
+
+        public ScannerError(string message, Exception innerException) : base(message, innerException) { }
+    }
+
     internal class ScannerHandle
     {
         private string PID = null, VID = null;
-        private int RequestPeriod = 200; // in ms
+        private UInt64 currDevHandleID = 0;
+        private static UInt64 ErrorID = 0xffffffffffffffff;
+        private static IntPtr Dll = IntPtr.Zero;
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet =CharSet.Ansi)]
         public delegate IntPtr GetConnectedDevice(int maxWaitTime /*In seconds*/);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate int GetDevicePID(IntPtr device);
+        private delegate ushort GetDevicePID(IntPtr device);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private delegate int GetDeviceVID(IntPtr device);
+        private delegate ushort GetDeviceVID(IntPtr device);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
         private delegate void FreeDevice(IntPtr device);
-        
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private delegate UInt64 CreateScannerObject(string pid, string vid);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private delegate bool RegistrateObjectsReader();
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private delegate bool StartupScannersReader();
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private delegate void UnregistrateObjectsReader();
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private delegate void DeleteScannerObject(UInt64 id);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private delegate void SetScannerReadCallback(UInt64 id, IntPtr func);
+
+        public delegate void DataCallbackFunc(uint status, IntPtr data);
+
+        private IntPtr _DTC;
+        /// <summary>
+        ///  Function wait for connection of scanner and return it PID and VID  
+        /// </summary>
+        /// <returns>string[2] { PID, VID }</returns>
         private string[] WaitForConnection()
         {
-            
-            IntPtr Dll = DLL_worker.LoadLibraryA("ECB_llc.dll");
             if (Dll == IntPtr.Zero)
             {
                 Program.CheckModules();
@@ -38,21 +72,26 @@ namespace ECB_v2.Scanner
                 GetConnectedDevice waitForConnect = (GetConnectedDevice)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "GetConnectedDevice"), typeof(GetConnectedDevice));
                 GetDevicePID GetDevPID = (GetDevicePID)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "GetDevicePID"), typeof(GetDevicePID));
                 GetDeviceVID GetDevVID = (GetDeviceVID)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "GetDeviceVID"), typeof(GetDeviceVID));
-
+                FreeDevice FreeDev = (FreeDevice)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "FreeDevice"), typeof(FreeDevice));
                 IntPtr device = waitForConnect(60 * 2);
                 if (device == IntPtr.Zero)
-                    throw new Exception("Device not found or time out!");
-                int pidPtr =  GetDevPID(device),
+                    throw new ScannerError("Device not found or time out!");
+                ushort pidPtr =  GetDevPID(device),
                     vidPtr = GetDevVID(device);
-                throw new Exception("Not ended the function!");
+                string[] result = new string[]{
+                    pidPtr.ToString("X4"),
+                    vidPtr.ToString("X4")
+                };
+                FreeDev(device);
+                return result;
             }
-            catch
+            catch(ScannerError e) 
             {
+                MessageBox.Show(e.Message);
             }
-            DLL_worker.FreeLibrary(Dll);
             return null;
         }
-        private bool FindScanner(Settings st)
+        private bool FindScanner()
         {
             ScSettings scSettingsWnd = new ScSettings();
             scSettingsWnd.SetWaitFunc(WaitForConnection);
@@ -69,41 +108,75 @@ namespace ECB_v2.Scanner
 
             return false;
         }
-        public ScannerHandle() { }
-        public bool Initialize() {  
-            Settings st = new Settings(DEFINES.SETTINGS_FILE);
-            if (st == null)
-                Program.MemError();
-            if(st.LoadFile() != Settings.ST_STATUS.SUCCESS)
-            {
-                return FindScanner(st);
+
+        private bool ScCreateConnection()
+        {
+            if (this.VID == null || this.PID == null)
+                return false;
+            try {
+                if (Dll == IntPtr.Zero)
+                {
+                    Program.CheckModules();
+                    return false;
+                }
+                CreateScannerObject CreateSc = (CreateScannerObject)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "CreateScannerObject"), typeof(CreateScannerObject));
+                this.currDevHandleID = CreateSc(this.PID, this.VID);
+                if (this.currDevHandleID == ScannerHandle.ErrorID)
+                {
+                    Program.ErrorMsg("Не удалось получить доступ к сканнеру штрих-кодов! Ошибка...");
+                    return false;
+                }
             }
+            catch { 
+                Program.ErrorMsg(DEFINES.errors["UNKNOWN"]);
+                return false;
+            }
+            return true;
+        }
+
+        public ScannerHandle() { }
+
+        public static bool LoadModules() {
+            Dll = DLL_worker.LoadLibraryA("ECB_llc.dll");
+            return Dll != IntPtr.Zero; 
+        }
+
+        public static void FreeModules()
+        {
+            if(Dll != IntPtr.Zero)
+                DLL_worker.FreeLibrary(Dll);
+        }
+        public bool Initialize() {  
             try
             {
                 Settings.ST_STATUS res = Settings.ST_STATUS.SUCCESS;
-                this.PID = st.GetValue("SC_PID");
-                res = res | st.status;
-                this.VID = st.GetValue("SC_VID");
-                res = res | st.status;
+                this.PID = Settings.GetValue("SC_PID");
+                res = res | Settings.status;
+                this.VID = Settings.GetValue("SC_VID");
+                res = res | Settings.status;
                 if (res != Settings.ST_STATUS.SUCCESS)
                 {
-                    return FindScanner(st);
+                    return FindScanner();
                 }
-                this.RequestPeriod = int.Parse(st.GetValue("SC_RPms"));
-                if (st.status != Settings.ST_STATUS.SUCCESS)
-                    throw new FormatException();
             }
-            catch (FormatException)
-            {
-                this.RequestPeriod = 200;
-                st.SetVal("SC_RPms", this.RequestPeriod.ToString());
-            }catch
+            catch
             {
                 Program.ErrorMsg(DEFINES.errors["UNKNOWN"]);
+                return false;
             }
-            return false; 
+            return ScCreateConnection(); 
         }
 
+        public void SetDataCallback(DataCallbackFunc func) {
+            if (Dll == IntPtr.Zero)
+            {
+                Program.CheckModules();
+                return;
+            }
+            SetScannerReadCallback SetRCB = (SetScannerReadCallback)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "SetScannerReadCallback"), typeof(SetScannerReadCallback));
+            this._DTC = Marshal.GetFunctionPointerForDelegate(func);
+            SetRCB(this.currDevHandleID, this._DTC);
+        }
 
         public void SetScanner(string PID, string VID, int v)
         {
@@ -112,15 +185,51 @@ namespace ECB_v2.Scanner
                 this.VID = VID;
                 this.PID = PID;
             }
-            if (v >= 50 && v <= 500)
-                this.RequestPeriod = v;
-            Settings st = new Settings(DEFINES.SETTINGS_FILE);
-            if (st == null) Program.MemError();
-            st.SetVal("SC_PID", this.PID);
-            st.SetVal("SC_VID", this.VID);
-            st.SetVal("SC_RPms", this.RequestPeriod.ToString());
-            st.SaveSettings();
+            Settings.SetVal("SC_PID", this.PID);
+            Settings.SetVal("SC_VID", this.VID);
+            Settings.SaveSettings();
         }
-        public void Free() { }
+
+        public static bool StartUpReadCycle() {
+            if (Dll == IntPtr.Zero)
+            {
+                Program.CheckModules();
+                return false;
+            }
+            RegistrateObjectsReader RegReader = (RegistrateObjectsReader)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "RegistrateObjectsReader"), typeof(RegistrateObjectsReader));
+            StartupScannersReader StartRead = (StartupScannersReader)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "StartupScannersReader"), typeof (StartupScannersReader));
+            
+            if(!RegReader())
+            {
+                return false;
+            }
+            if (!StartRead())
+            {
+                return false;
+            }
+            return true;
+        }
+
+        public static void StopReadCycle()
+        {
+            if (Dll == IntPtr.Zero)
+                return;
+            UnregistrateObjectsReader UnregReader = (UnregistrateObjectsReader)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "UnregistrateObjectsReader"), typeof(UnregistrateObjectsReader));
+            UnregReader();
+        }
+
+        public void Free() {
+            this.PID = null;
+            this.VID = null;
+            if(this.currDevHandleID != ScannerHandle.ErrorID)
+            {
+                if (Dll == IntPtr.Zero)
+                {
+                    Program.CheckModules();
+                }
+                DeleteScannerObject DelObj = (DeleteScannerObject)Marshal.GetDelegateForFunctionPointer(DLL_worker.GetProcAddress(Dll, "DeleteScannerObject"), typeof(DeleteScannerObject));
+                DelObj(this.currDevHandleID);
+            }
+        }
     }
 }

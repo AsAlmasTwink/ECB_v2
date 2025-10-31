@@ -12,27 +12,24 @@ namespace ECB_v2.resources
         static string folder;
         static string imageFolder;
 
-        private static string LoadParametr(Settings st, string paramName, string paramDefault) {
+        private static string LoadParametr(string paramName, string paramDefault) {
             string result;
-            result = st.GetValue(paramName);
+            result = Settings.GetValue(paramName);
 
-            if (st.status != Settings.ST_STATUS.SUCCESS)
+            if (Settings.status != Settings.ST_STATUS.SUCCESS)
             {
                 result = paramDefault;
-                st.SetVal(paramName, paramDefault);
-                st.SaveSettings();
+                Settings.SetVal(paramName, paramDefault);
+                Settings.SaveSettings();
             }
             return result;
         }
         public static bool LoadResources()
         {
-            Settings st = new Settings(DEFINES.SETTINGS_FILE);
-            st.LoadFile();
-
             try
             {
-                folder = LoadParametr(st, "RES", DEFINES.RESOURCE_DEF);
-                imageFolder = LoadParametr(st, "IMG", DEFINES.RESOURCE_IMG_DEF);
+                folder = LoadParametr("RES", DEFINES.RESOURCE_DEF);
+                imageFolder = LoadParametr("IMG", DEFINES.RESOURCE_IMG_DEF);
             }
             catch
             {

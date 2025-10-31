@@ -94,6 +94,19 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="dll\DLL_worker.cs" />
+    <Compile Include="Loading\CheckModulesWnd.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Loading\CheckModulesWnd.Designer.cs">
+      <DependentUpon>CheckModulesWnd.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Registration\HandleSign.cs" />
+    <Compile Include="Registration\Registration.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Registration\Registration.Designer.cs">
+      <DependentUpon>Registration.cs</DependentUpon>
+    </Compile>
     <Compile Include="resources\Resources.cs" />
     <Compile Include="Scanner\ScannerHandle.cs" />
     <Compile Include="Scanner\ScSettings.cs">
@@ -102,6 +115,7 @@
     <Compile Include="Scanner\ScSettings.Designer.cs">
       <DependentUpon>ScSettings.cs</DependentUpon>
     </Compile>
+    <Compile Include="Session.cs" />
     <Compile Include="Settings.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -111,6 +125,9 @@
     <Compile Include="Start.Designer.cs">
       <DependentUpon>Start.cs</DependentUpon>
     </Compile>
+    <EmbeddedResource Include="Loading\CheckModulesWnd.resx">
+      <DependentUpon>CheckModulesWnd.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
@@ -162,6 +179,9 @@
       <ProductName>.NET Framework 3.5 SP1</ProductName>
       <Install>true</Install>
     </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="DB\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

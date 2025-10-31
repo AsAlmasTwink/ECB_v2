@@ -4,3 +4,10 @@ EXPORTS
 	GetDevicePID				@2
 	GetDeviceVID				@3
 	FreeDevice					@4
+
+	CreateScannerObject			@5
+	SetScannerReadCallback		@6
+	RegistrateObjectsReader		@7
+	StartupScannersReader		@8
+	UnregistrateObjectsReader	@9
+	DeleteScannerObject			@10
